@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PixiJS Displacement Map Demo</title>
+    <!-- Include PixiJS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/5.3.3/pixi.min.js"></script>
+
+    <!-- Include PixiJS filters (only if you're using any special filters from this library) -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi-filters@latest/dist/browser/pixi-filters.min.js"></script>
+    <script async src="https://docs.opencv.org/master/opencv.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.12.17/paper-full.min.js"></script>
+
+    <style>
+      canvas {
+        border: 1px solid #ccc;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="status">Loading...</div>
+    <canvas id="outputCanvas" style="display: none"></canvas>
+
+    <input type="file" id="designInput" />
+    <button id="finish-button">Finish</button>
+    <!-- <canvas id="c" width="800" height="600"></canvas> -->
+    <script>
+      // Create a new PIXI application
+      const app = new PIXI.Application({
+        width: 800, // Width of the canvas
+        height: 600, // Height of the canvas
+        backgroundColor: 0x1099bb, // Giving it a background color for visibility
+      });
+      document.body.appendChild(app.view); // Append the created canvas to the body
+
+      // Load the mug image
+      const mugTexture = PIXI.Texture.from("/assets/mug2.jpg");
+      const mugSprite = new PIXI.Sprite(mugTexture);
+      app.stage.addChild(mugSprite);
+
+      // Create a graphics object for the shape
+      const shape = new PIXI.Graphics();
+      app.stage.addChild(shape);
+
+      // Define the initial rectangle dimensions
+      const rectangle = { x: 150, y: 150, width: 280, height: 300 };
+
+      // Function to create a control point
+      function createControlPoint(x, y) {
+        const controlPoint = new PIXI.Graphics();
+        controlPoint.beginFill(0x0000ff); // Blue color for control points
+        controlPoint.drawCircle(0, 0, 10); // Draw the control point
+        controlPoint.endFill();
+        controlPoint.x = x;
+        controlPoint.y = y;
+        controlPoint.interactive = true;
+        controlPoint.buttonMode = true;
+        controlPoint
+          .on("pointerdown", onDragStart)
+          .on("pointerup", onDragEnd)
+          .on("pointerupoutside", onDragEnd)
+          .on("pointermove", onDragMove);
+
+        return controlPoint;
+      }
+
+      // Function to update the shape graphics based on control point positions
+      // Function to update the shape graphics based on control point positions
+      function updateShape(controlPoints) {
+        shape.clear();
+        shape.beginFill(0x66cc66); // Green color for the shape
+
+        // Start the shape at the first corner
+        shape.moveTo(controlPoints[0].x, controlPoints[0].y);
+
+        // Draw Bezier curves using the control points
+        // Assuming controlPoints[1] is the top-middle, controlPoints[3] is the right-middle, etc.
+        shape.bezierCurveTo(
+          controlPoints[1].x,
+          controlPoints[1].y, // First control point (top-middle)
+          controlPoints[1].x,
+          controlPoints[1].y, // Second control point (top-middle again, for a quadratic Bezier curve)
+          controlPoints[2].x,
+          controlPoints[2].y // Destination point (top-right corner)
+        );
+
+        // Right side
+        shape.bezierCurveTo(
+          controlPoints[3].x,
+          controlPoints[3].y,
+          controlPoints[3].x,
+          controlPoints[3].y,
+          controlPoints[4].x,
+          controlPoints[4].y
+        );
+
+        // Bottom side
+        shape.bezierCurveTo(
+          controlPoints[5].x,
+          controlPoints[5].y,
+          controlPoints[5].x,
+          controlPoints[5].y,
+          controlPoints[6].x,
+          controlPoints[6].y
+        );
+
+        // Left side
+        shape.bezierCurveTo(
+          controlPoints[7].x,
+          controlPoints[7].y,
+          controlPoints[7].x,
+          controlPoints[7].y,
+          controlPoints[0].x,
+          controlPoints[0].y
+        );
+
+        shape.endFill();
+      }
+
+      // Event listeners for control points
+      function onDragStart(event) {
+        const controlPoint = event.currentTarget;
+        controlPoint.data = event.data;
+        controlPoint.alpha = 0.5;
+        controlPoint.dragging = true;
+      }
+
+      function onDragEnd(event) {
+        const controlPoint = event.currentTarget;
+        controlPoint.alpha = 1;
+        controlPoint.dragging = false;
+        controlPoint.data = null;
+      }
+
+      function onDragMove() {
+        if (this.dragging) {
+          const newPosition = this.data.getLocalPosition(this.parent);
+          this.x = newPosition.x;
+          this.y = newPosition.y;
+          updateShape(controlPoints);
+
+          if (designSprite) {
+            fitDesignToShape(designSprite, shape);
+          }
+        }
+      }
+
+      // Create the initial control points
+      let controlPoints = [
+        createControlPoint(rectangle.x, rectangle.y), // Top-left
+        createControlPoint(rectangle.x + rectangle.width / 2, rectangle.y), // Top-middle
+        createControlPoint(rectangle.x + rectangle.width, rectangle.y), // Top-right
+        createControlPoint(
+          rectangle.x + rectangle.width,
+          rectangle.y + rectangle.height / 2
+        ), // Right-middle
+        createControlPoint(
+          rectangle.x + rectangle.width,
+          rectangle.y + rectangle.height
+        ), // Bottom-right
+        createControlPoint(
+          rectangle.x + rectangle.width / 2,
+          rectangle.y + rectangle.height
+        ), // Bottom-middle
+        createControlPoint(rectangle.x, rectangle.y + rectangle.height), // Bottom-left
+        createControlPoint(rectangle.x, rectangle.y + rectangle.height / 2), // Left-middle
+      ];
+
+      // Add control points to the stage and update the shape
+      controlPoints.forEach((p) => app.stage.addChild(p));
+      updateShape(controlPoints);
+
+      // Redraw the initial shape
+      updateShape(controlPoints);
+
+      // ... [Previous code] ...
+
+      // Variables to store the state of the dragging
+      let isDraggingShape = false;
+      let dragStartPoint = null;
+
+      // ... [Rest of the PIXI setup and control point code] ...
+
+      // Function to enable dragging of the shape
+      function enableShapeDragging() {
+        // Make the shape interactive
+        shape.interactive = true;
+        shape.buttonMode = true;
+
+        // Add event listeners to the shape for dragging
+        shape
+          .on("pointerdown", onShapeDragStart)
+          .on("pointerup", onShapeDragEnd)
+          .on("pointerupoutside", onShapeDragEnd)
+          .on("pointermove", onShapeDragMove);
+      }
+
+      // Call this function to enable dragging for the shape
+      enableShapeDragging();
+
+      // Event listeners for dragging the shape
+      function onShapeDragStart(event) {
+        // We check if the shape is the target
+        if (event.target === shape) {
+          isDraggingShape = true;
+          dragStartPoint = event.data.getLocalPosition(this.parent);
+          shape.alpha = 0.5; // Optional: change alpha for visual feedback
+        }
+      }
+
+      function onShapeDragEnd(event) {
+        // Only reset dragging state if it was previously true
+        if (isDraggingShape) {
+          isDraggingShape = false;
+          shape.alpha = 1; // Reset the alpha to full opacity
+        }
+      }
+
+      let designSprite = null;
+
+      function onShapeDragMove(event) {
+        if (isDraggingShape) {
+          const newPosition = event.data.getLocalPosition(this.parent);
+          const dx = newPosition.x - dragStartPoint.x;
+          const dy = newPosition.y - dragStartPoint.y;
+
+          controlPoints.forEach((point) => {
+            point.x += dx;
+            point.y += dy;
+          });
+
+          // Update the position of the shape
+          updateShape(controlPoints);
+
+          // // Update the design sprite's position to follow the shape
+          if (designSprite) {
+            designSprite.x += dx;
+            designSprite.y += dy;
+          }
+
+          // Set the new drag start point for the next calculation
+          dragStartPoint = newPosition;
+        }
+      }
+
+      // Hide control points function
+      function hideControlPoints() {
+        controlPoints.forEach((point) => {
+          point.visible = false;
+        });
+      }
+
+      function fitDesignToShape(design, shape) {
+        // Get the bounds of the shape and the design
+        const shapeBounds = shape.getBounds();
+        const designBounds = design.getBounds();
+
+        // Calculate the scale factors
+        const scaleX = shapeBounds.width / designBounds.width;
+        const scaleY = shapeBounds.height / designBounds.height;
+
+        // Apply the smaller scale factor to both x and y to maintain aspect ratio
+        const uniformScale = Math.min(scaleX, scaleY);
+        design.scale.set(uniformScale, uniformScale);
+
+        // Center the design within the shape
+        design.x =
+          shapeBounds.x +
+          (shapeBounds.width - designBounds.width * uniformScale) / 2;
+        design.y =
+          shapeBounds.y +
+          (shapeBounds.height - designBounds.height * uniformScale) / 2;
+      }
+
+    //   function handleFileSelect(event) {
+    //     const file = event.target.files[0];
+    //     if (file) {
+    //       const reader = new FileReader();
+    //       reader.onload = function (e) {
+    //         const designTexture = PIXI.Texture.from(e.target.result);
+    //         designSprite = new PIXI.Sprite(designTexture);
+
+    //         // Calculate the bounding box of the shape
+    //         const bounds = shape.getBounds();
+
+    //         // Scale the image to fit within the bounding box
+    //         designSprite.width = bounds.width;
+    //         designSprite.height = bounds.height;
+
+    //         // Position the image at the top-left corner of the bounding box
+    //         designSprite.position.set(bounds.x, bounds.y);
+
+    //         // Mask the design with the shape
+    //         designSprite.mask = shape;
+
+    //         // Add the design to the stage and ensure it's under the shape in the display list
+    //         app.stage.addChild(designSprite);
+    //         app.stage.addChild(shape);
+
+    //         // Hide control points after adding design
+    //         hideControlPoints();
+    //         fitDesignToShape(designSprite, shape);
+    //       };
+    //       reader.readAsDataURL(file);
+    //     }
+    //   }
+
+      function handleFileSelect(event) {
+  const file = event.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      const designTexture = PIXI.Texture.from(e.target.result);
+      // Assuming you're working with a 2x2 grid for simplicity
+      const mesh = new PIXI.SimplePlane(designTexture, 2, 2);
+
+      // Position the mesh's vertices to match the shape's control points
+      const vertices = [];
+      for (let i = 0; i < controlPoints.length; i++) {
+        vertices.push(controlPoints[i].x, controlPoints[i].y);
+      }
+      mesh.vertices = new Float32Array(vertices);
+
+      // Update mesh vertices whenever control points are moved
+      controlPoints.forEach((point, index) => {
+        point.on('pointermove', function () {
+          mesh.vertices[index * 2] = point.x;
+          mesh.vertices[index * 2 + 1] = point.y;
+          mesh.dirtyVertex = true;
+        });
+      });
+
+      app.stage.addChild(mesh);
+      hideControlPoints();
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
+      // Add event listener to the file input element
+      const designInput = document.getElementById("designInput");
+      designInput.addEventListener("change", handleFileSelect);
+    </script>
+  </body>
+</html>
